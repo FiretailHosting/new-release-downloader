@@ -1,15 +1,10 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { Octokit } from '@octokit/rest';
 import { createAppAuth } from '@octokit/auth-app';
 import fetch from 'node-fetch';
 import 'dotenv/config';
-
-const privateKey = fs.readFileSync('./pkey.pem', 'utf-8');
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 
@@ -21,6 +16,15 @@ const repo = process.env.GITHUB_REPO;
 const downloadFolder = process.env.DOWNLOAD_FOLDER || './';
 const assetName = process.env.ASSET_NAME; // For example: "x64-linux" or "x64-linux.zip"
 const outputFileName = process.env.OUTPUT_FILE_NAME || 'download';
+const githubPrivateKeyFilepath = process.env.GITHUB_PRIVATE_KEY_FILEPATH;
+
+const privateKey = fs.readFileSync(githubPrivateKeyFilepath, 'utf-8');
+
+if (!appId || !installationId || !owner || !repo || !assetName || !privateKey) {
+  console.error("Missing required configuration. Please check your environment variables.");
+  process.exit(1);
+}
+
 // Initialize Octokit with GitHub App authentication
 const octokit = new Octokit({
   authStrategy: createAppAuth,
