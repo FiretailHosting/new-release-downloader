@@ -8,7 +8,12 @@
     "node-fetch": "^3.3.2"
   },
   "bin": "server.js",
-  "name": "prok",
+  "pkg": {
+    "scripts": [
+      "server.js"
+    ]
+  },
+  "name": "proj",
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
