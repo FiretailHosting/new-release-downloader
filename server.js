@@ -61,12 +61,10 @@ app.get('/update-release', async (req, res) => {
       Authorization: `token ${installationToken}`,
       Accept: 'application/octet-stream'
     };
-    console.log("Request headers:", requestHeaders);
 
     // Download the asset using node-fetch
     const response = await fetch(assetApiUrl, { headers: requestHeaders });
-    console.log(`Fetch response status: ${response.status} ${response.statusText}`);
-    if (!response.ok) {
+     if (!response.ok) {
       const errorText = await response.text();
       console.error("Fetch error details:", errorText);
       throw new Error(`Failed to download release asset: ${response.statusText} - ${errorText}`);
