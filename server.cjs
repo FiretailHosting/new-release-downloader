@@ -93,6 +93,8 @@ const { Readable } = require('stream'); // <-- Import Node's stream module
       });
 
       console.log("File downloaded successfully.");
+
+      
       res.send(`Latest release asset downloaded to ${filePath}`);
     } catch (error) {
       console.error("Error in /update-release:", error);
