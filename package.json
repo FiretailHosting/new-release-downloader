@@ -18,7 +18,8 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "start": "node server.cjs",
+    "build": "npx esbuild server.cjs --bundle --platform=node --target=node18 --outfile=dist/server.js && pkg ./dist/server.js --target node18-x64-linux -o ./dist/server-x64"
   },
   "author": "",
   "license": "ISC",

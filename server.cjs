@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { Readable } = require('stream'); // <-- Import Node's stream module
 
 (async () => {
@@ -10,6 +11,51 @@ const { Readable } = require('stream'); // <-- Import Node's stream module
   const { createAppAuth } = await import('@octokit/auth-app');
 
   const app = express();
+
+  // Use express.json with a verify callback to capture the raw body
+  app.use(express.json({
+    verify: (req, res, buf, encoding) => {
+      req.rawBody = buf;
+    }
+  }));
+
+  /**
+   * Middleware to verify the GitHub webhook signature.
+   * It supports both SHA-256 and SHA-1 (if only X-Hub-Signature is provided).
+   */
+  function verifyGithubSignature(req, res, next) {
+    const secret = process.env.GITHUB_WEBHOOK_SECRET;
+    if (!secret) {
+      console.error("Missing GITHUB_WEBHOOK_SECRET in environment variables.");
+      return res.status(500).send("Server configuration error");
+    }
+    
+    // Try to use the SHA-256 header first, then fallback to SHA-1
+    let signature = req.get('X-Hub-Signature-256');
+    let algorithm = 'sha256';
+    if (!signature) {
+      signature = req.get('X-Hub-Signature');
+      algorithm = 'sha1';
+    }
+    if (!signature) {
+      console.error("No signature found on request.");
+      return res.status(401).send('Signature missing');
+    }
+
+    // Compute the digest using the same algorithm and the raw body
+    const hmac = crypto.createHmac(algorithm, secret);
+    hmac.update(req.rawBody);
+    const digest = `${algorithm}=` + hmac.digest('hex');
+
+    // Use timingSafeEqual to prevent timing attacks
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
+      console.error("Request signatures do not match.");
+      return res.status(401).send('Invalid signature');
+    }
+    
+    // Signature verified; continue to the next middleware/route handler
+    next();
+  }
 
   // Load configuration from environment variables
   const appId = process.env.GITHUB_APP_ID;
@@ -38,9 +84,13 @@ const { Readable } = require('stream'); // <-- Import Node's stream module
     },
   });
 
-  // Route to download the latest release asset by name
-  app.get('/update-release', async (req, res) => {
+  // Use POST (GitHub sends webhook payloads as POST requests) and add our verification middleware
+  app.post('/github-webhook', verifyGithubSignature, async (req, res) => {
     try {
+      // Optionally, log the event type
+      const eventType = req.get('X-GitHub-Event');
+      console.log(`Received GitHub event: ${eventType}`);
+
       // Get an installation access token
       const { token: installationToken } = await octokit.auth({ type: "installation" });
       if (!installationToken) throw new Error("No installation token received");
@@ -93,11 +143,9 @@ const { Readable } = require('stream'); // <-- Import Node's stream module
       });
 
       console.log("File downloaded successfully.");
-
-      
       res.send(`Latest release asset downloaded to ${filePath}`);
     } catch (error) {
-      console.error("Error in /update-release:", error);
+      console.error("Error in /github-webhook:", error);
       res.status(500).send(`Error: ${error.message}`);
     }
   });
