@@ -1,0 +1,52 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build project
+        run: npm run build
+
+      - name: Archive build artifacts
+        run: tar -czvf release.tar.gz dist/
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: `release-${new Date().toISOString().split('T')[0]}`,
+              name: `Release ${new Date().toISOString().split('T')[0]}`,
+              body: "Automated release triggered by push to main.",
+              draft: false,
+              prerelease: false
+            });
+            core.setOutput("upload_url", data.upload_url);
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: release.tar.gz
+          asset_name: release.tar.gz
+          asset_content_type: application/gzip
