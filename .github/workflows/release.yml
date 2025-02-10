@@ -50,9 +50,12 @@ jobs:
           }')
           echo "UPLOAD_URL=$(echo $response | jq -r .upload_url)" >> $GITHUB_ENV
 
-      - name: Upload Release Asset (server-x64)
+      - name: Upload Release Asset (binary)
         run: |
-          curl -X POST -H "Authorization: Bearer ${{ steps.auth.outputs.token }}" \
-          -H "Content-Type: application/octet-stream" \
-          --data-binary @dist/server-x64 \
-          "$(echo $UPLOAD_URL | sed 's/{?name,label}//')?name=server-x64"
+           # Compute the binary filename dynamically.
+           binary_file=dist/$(node -p "require('./package.json').name + '-v' + require('./package.json').version + '-linux-x64'")
+           echo "Uploading: $binary_file"
+           curl -X POST -H "Authorization: Bearer ${{ steps.auth.outputs.token }}" \
+           -H "Content-Type: application/octet-stream" \
+           --data-binary @"$binary_file" \
+           "$(echo $UPLOAD_URL | sed 's/{?name,label}//')?name=$(basename $binary_file)"
