@@ -27,26 +27,31 @@ jobs:
       - name: Archive build artifacts
         run: tar -czvf release.tar.gz dist/
 
+      - name: Authenticate GitHub App
+        id: auth
+        uses: tibdex/github-app-token@v1
+        with:
+          app_id: ${{ secrets.GH_APP_ID }}
+          private_key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
       - name: Create GitHub Release
         id: create_release
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { data } = await github.rest.repos.createRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: `release-${new Date().toISOString().split('T')[0]}`,
-              name: `Release ${new Date().toISOString().split('T')[0]}`,
-              body: "Automated release triggered by push to main.",
-              draft: false,
-              prerelease: false
-            });
-            core.setOutput("upload_url", data.upload_url);
+        run: |
+          response=$(curl -s -X POST -H "Authorization: Bearer ${{ steps.auth.outputs.token }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/${{ github.repository }}/releases \
+          -d '{
+            "tag_name": "release-'$(date +%Y%m%d%H%M%S)'",
+            "name": "Automated Release",
+            "body": "Automated release triggered by push to main.",
+            "draft": false,
+            "prerelease": false
+          }')
+          echo "UPLOAD_URL=$(echo $response | jq -r .upload_url)" >> $GITHUB_ENV
 
       - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: release.tar.gz
-          asset_name: release.tar.gz
-          asset_content_type: application/gzip
+        run: |
+          curl -X POST -H "Authorization: Bearer ${{ steps.auth.outputs.token }}" \
+          -H "Content-Type: application/gzip" \
+          --data-binary @release.tar.gz \
+          "$(echo $UPLOAD_URL | sed 's/{?name,label}//')?name=release.tar.gz"
