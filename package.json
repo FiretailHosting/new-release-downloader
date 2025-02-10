@@ -6,19 +6,17 @@
     "dotenv": "^16.4.7",
     "node-fetch": "^3.3.2"
   },
-  "bin": "server.js",
-  "pkg": {
-    "scripts": [
-      "server.js"
-    ]
+  "bin": "./dist/build/server.js",
+ "pkg": {
+    "targets": ["node18-x64-linux"]
   },
-  "name": "proj",
-  "version": "1.0.1",
+  "name": "release-downloader",
+  "version": "1.0.2",
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.cjs",
-    "build": "npx esbuild server.cjs --bundle --platform=node --target=node18 --outfile=dist/server.js && pkg ./dist/server.js --target node18-x64-linux -o ./dist/server-x64"
+    "build": "mkdir -p dist/build && esbuild server.cjs --bundle --platform=node --target=node18 --outfile=dist/build/server.js && pkg ./dist/build/server.js --target node18-x64-linux -o dist/$(node -p \"require('./package.json').name + '-v' + require('./package.json').version + '-linux-x64'\")"
   },
   "author": "",
   "license": "ISC",
