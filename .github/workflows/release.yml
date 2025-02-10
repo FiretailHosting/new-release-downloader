@@ -21,11 +21,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Get version from package.json
+        id: package_version
+        run: echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
+
       - name: Build project
         run: npm run build
-
-      - name: Archive build artifacts
-        run: tar -czvf release.tar.gz dist/
 
       - name: Authenticate GitHub App
         id: auth
@@ -41,17 +42,17 @@ jobs:
           -H "Accept: application/vnd.github.v3+json" \
           https://api.github.com/repos/${{ github.repository }}/releases \
           -d '{
-            "tag_name": "release-'$(date +%Y%m%d%H%M%S)'",
-            "name": "Automated Release",
-            "body": "Automated release triggered by push to main.",
+            "tag_name": "v${{ env.VERSION }}",
+            "name": "Release v${{ env.VERSION }}",
+            "body": "Automated release for version v${{ env.VERSION }}",
             "draft": false,
             "prerelease": false
           }')
           echo "UPLOAD_URL=$(echo $response | jq -r .upload_url)" >> $GITHUB_ENV
 
-      - name: Upload Release Asset
+      - name: Upload Release Asset (server-x64)
         run: |
           curl -X POST -H "Authorization: Bearer ${{ steps.auth.outputs.token }}" \
-          -H "Content-Type: application/gzip" \
-          --data-binary @release.tar.gz \
-          "$(echo $UPLOAD_URL | sed 's/{?name,label}//')?name=release.tar.gz"
+          -H "Content-Type: application/octet-stream" \
+          --data-binary @dist/server-x64 \
+          "$(echo $UPLOAD_URL | sed 's/{?name,label}//')?name=server-x64"
