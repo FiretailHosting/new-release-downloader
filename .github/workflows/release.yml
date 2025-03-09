@@ -56,19 +56,20 @@ jobs:
             // Remove the refs/tags/ prefix to get the tag name.
             const tag = process.env.GITHUB_REF.replace('refs/tags/', '');
             try {
-              const release = await github.rest.repos.getReleaseByTag({
+              await github.rest.repos.getReleaseByTag({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 tag: tag,
               });
               core.info(`Release for tag ${tag} already exists.`);
-              return { exists: 'true' };
+              core.setOutput('exists', 'true');
             } catch (error) {
               if (error.status === 404) {
                 core.info(`No release found for tag ${tag}.`);
-                return { exists: 'false' };
+                core.setOutput('exists', 'false');
+              } else {
+                throw error;
               }
-              throw error;
             }
           result-encoding: string
           
