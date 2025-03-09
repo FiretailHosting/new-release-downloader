@@ -48,6 +48,11 @@ jobs:
       - name: Download Build Artifacts
         uses: actions/download-artifact@v4
 
+      - name: Set Version from package.json
+        id: set_version
+        run: |
+          echo "VERSION=$(node -p \"require('./package.json').version\")" >> $GITHUB_ENV
+
       # Create a GitHub release based on the pushed tag.
       - name: Check if Release Exists
         id: check_release
