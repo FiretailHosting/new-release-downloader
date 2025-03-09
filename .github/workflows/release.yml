@@ -107,3 +107,55 @@ jobs:
           }")
           echo "Response: $response"
           echo "UPLOAD_URL=$(echo $response | jq -r .upload_url)" >> $GITHUB_ENV
+
+            # Upload each executable to the release.
+
+  upload_x64:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate GitHub App
+        id: auth_x64
+        uses: tibdex/github-app-token@v1
+        with:
+          app_id: ${{ secrets.GH_APP_ID }}
+          private_key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Upload x64 Binary
+        run: |
+          # Compute the binary filename dynamically.
+          binary_file=dist/$(node -p "require('./package.json').name + '-v' + '${{ needs.release.outputs.version }}' + '-linux-x64'")
+          echo "Uploading: $binary_file"
+          UPLOAD_URL="${{ needs.release.outputs.upload_url }}"
+          curl -X POST -H "Authorization: Bearer ${{ steps.auth_x64.outputs.token }}" \
+          -H "Content-Type: application/octet-stream" \
+          --data-binary @"$binary_file" \
+          "$(echo $UPLOAD_URL | sed 's/{?name,label}//')?name=$(basename $binary_file)"
+
+  upload_arm64:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate GitHub App
+        id: auth_arm64
+        uses: tibdex/github-app-token@v1
+        with:
+          app_id: ${{ secrets.GH_APP_ID }}
+          private_key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Upload arm64 Binary
+        run: |
+          # Compute the binary filename dynamically.
+          binary_file=dist/$(node -p "require('./package.json').name + '-v' + '${{ needs.release.outputs.version }}' + '-linux-arm64'")
+          echo "Uploading: $binary_file"
+          UPLOAD_URL="${{ needs.release.outputs.upload_url }}"
+          curl -X POST -H "Authorization: Bearer ${{ steps.auth_arm64.outputs.token }}" \
+          -H "Content-Type: application/octet-stream" \
+          --data-binary @"$binary_file" \
+          "$(echo $UPLOAD_URL | sed 's/{?name,label}//')?name=$(basename $binary_file)"
