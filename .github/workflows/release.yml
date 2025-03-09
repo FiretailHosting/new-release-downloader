@@ -33,28 +33,31 @@ jobs:
 
       - name: Package Executable for ${{ matrix.arch }}
         run: |
-          npx pkg ./dist/build/server.js --target node18-${{ matrix.arch }}-linux -o dist/$(node -p "require('./package.json').name + '-v' + require('./package.json').version + '-linux-' + '${{ matrix.arch }}'")
+          # Create executables with fixed names (no version in filename)
+          npx pkg ./dist/build/server.js --target node18-${{ matrix.arch }}-linux -o dist/release-downloader-linux-${{ matrix.arch }}
       
       - name: Upload Artifact for ${{ matrix.arch }}
         uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.arch }}
-          path: dist/*-${{ matrix.arch }}
+          path: dist/release-downloader-linux-${{ matrix.arch }}
     
   release:
     needs: build
     runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
       - name: Download Build Artifacts
         uses: actions/download-artifact@v4
 
-      # Set the version to the tag name (removes the "refs/tags/" prefix)
+      # Set the tag as the version (by stripping the 'refs/tags/' prefix)
       - name: Set tag as version
-        id: set_version
+        id: set_tag
         run: |
           TAG_NAME=${GITHUB_REF/refs\/tags\//}
-          echo "VERSION=$TAG_NAME" >> $GITHUB_ENV
           echo "Tag is $TAG_NAME"
+          echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
 
       - name: Check if Release Exists
         id: check_release
@@ -63,7 +66,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           script: |
-            // Remove the refs/tags/ prefix to get the tag name.
             const tag = process.env.GITHUB_REF.replace('refs/tags/', '');
             try {
               await github.rest.repos.getReleaseByTag({
@@ -94,30 +96,30 @@ jobs:
         id: create_release
         if: steps.check_release.outputs.exists == 'false'
         run: |
-          echo "Creating release for version ${VERSION}"
+          TAG=${GITHUB_REF/refs\/tags\//}
+          echo "Creating release for tag ${TAG}"
           response=$(curl -s -X POST -H "Authorization: Bearer ${{ steps.auth.outputs.token }}" \
-          -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/repos/${{ github.repository }}/releases \
-          -d "{
-            \"tag_name\": \"${VERSION}\",
-            \"name\": \"Release ${VERSION}\",
-            \"body\": \"Automated release for version ${VERSION}\",
-            \"draft\": false,
-            \"prerelease\": false
-          }")
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/releases \
+            -d "{
+              \"tag_name\": \"${TAG}\",
+              \"name\": \"Release ${TAG}\",
+              \"body\": \"Automated release for tag ${TAG}\",
+              \"draft\": false,
+              \"prerelease\": false
+            }")
           echo "Response: $response"
-          echo "UPLOAD_URL=$(echo $response | jq -r .upload_url)" >> $GITHUB_ENV
-
-            # Upload each executable to the release.
+          UPLOAD_URL=$(echo $response | jq -r .upload_url)
+          echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT
 
   upload_x64:
     needs: release
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
 
-      - name: Authenticate GitHub App
+      - name: Authenticate GitHub App for x64
         id: auth_x64
         uses: tibdex/github-app-token@v1
         with:
@@ -126,23 +128,23 @@ jobs:
 
       - name: Upload x64 Binary
         run: |
-          # Compute the binary filename dynamically.
-          binary_file=dist/$(node -p "require('./package.json').name + '-v' + '${{ needs.release.outputs.version }}' + '-linux-x64'")
+          binary_file=dist/release-downloader-linux-x64
           echo "Uploading: $binary_file"
           UPLOAD_URL="${{ needs.release.outputs.upload_url }}"
+          # Override asset name to be constant (release-downloader-linux-x64)
           curl -X POST -H "Authorization: Bearer ${{ steps.auth_x64.outputs.token }}" \
           -H "Content-Type: application/octet-stream" \
           --data-binary @"$binary_file" \
-          "$(echo $UPLOAD_URL | sed 's/{?name,label}//')?name=$(basename $binary_file)"
+          "$(echo $UPLOAD_URL | sed 's/{?name,label}//')?name=release-downloader-linux-x64"
 
   upload_arm64:
     needs: release
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
 
-      - name: Authenticate GitHub App
+      - name: Authenticate GitHub App for arm64
         id: auth_arm64
         uses: tibdex/github-app-token@v1
         with:
@@ -151,11 +153,11 @@ jobs:
 
       - name: Upload arm64 Binary
         run: |
-          # Compute the binary filename dynamically.
-          binary_file=dist/$(node -p "require('./package.json').name + '-v' + '${{ needs.release.outputs.version }}' + '-linux-arm64'")
+          binary_file=dist/release-downloader-linux-arm64
           echo "Uploading: $binary_file"
           UPLOAD_URL="${{ needs.release.outputs.upload_url }}"
+          # Override asset name to be constant (release-downloader-linux-arm64)
           curl -X POST -H "Authorization: Bearer ${{ steps.auth_arm64.outputs.token }}" \
           -H "Content-Type: application/octet-stream" \
           --data-binary @"$binary_file" \
-          "$(echo $UPLOAD_URL | sed 's/{?name,label}//')?name=$(basename $binary_file)"
+          "$(echo $UPLOAD_URL | sed 's/{?name,label}//')?name=release-downloader-linux-arm64"
