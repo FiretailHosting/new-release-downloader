@@ -116,48 +116,50 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     steps:
-      - name: Download Build Artifacts
+      - name: Download x64 Build Artifact
         uses: actions/download-artifact@v4
-
+        with:
+          name: binary-x64
+          path: dist
       - name: Authenticate GitHub App for x64
         id: auth_x64
         uses: tibdex/github-app-token@v1
         with:
           app_id: ${{ secrets.GH_APP_ID }}
           private_key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-
       - name: Upload x64 Binary
         run: |
           binary_file=dist/release-downloader-linux-x64
           echo "Uploading: $binary_file"
           UPLOAD_URL="${{ needs.release.outputs.upload_url }}"
-          # Override asset name to be constant (release-downloader-linux-x64)
           curl -X POST -H "Authorization: Bearer ${{ steps.auth_x64.outputs.token }}" \
-          -H "Content-Type: application/octet-stream" \
-          --data-binary @"$binary_file" \
-          "$(echo $UPLOAD_URL | sed 's/{?name,label}//')?name=release-downloader-linux-x64"
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"$binary_file" \
+            "$(echo $UPLOAD_URL | sed 's/{?name,label}//')?name=release-downloader-linux-x64"
 
   upload_arm64:
     needs: release
     runs-on: ubuntu-latest
     steps:
-      - name: Download Build Artifacts
+      - name: Download arm64 Build Artifact
         uses: actions/download-artifact@v4
-
+        with:
+          name: binary-arm64
+          path: dist
       - name: Authenticate GitHub App for arm64
         id: auth_arm64
         uses: tibdex/github-app-token@v1
         with:
           app_id: ${{ secrets.GH_APP_ID }}
           private_key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-
       - name: Upload arm64 Binary
         run: |
           binary_file=dist/release-downloader-linux-arm64
           echo "Uploading: $binary_file"
           UPLOAD_URL="${{ needs.release.outputs.upload_url }}"
-          # Override asset name to be constant (release-downloader-linux-arm64)
           curl -X POST -H "Authorization: Bearer ${{ steps.auth_arm64.outputs.token }}" \
-          -H "Content-Type: application/octet-stream" \
-          --data-binary @"$binary_file" \
-          "$(echo $UPLOAD_URL | sed 's/{?name,label}//')?name=release-downloader-linux-arm64"
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"$binary_file" \
+            "$(echo $UPLOAD_URL | sed 's/{?name,label}//')?name=release-downloader-linux-arm64"
+
+  
