@@ -26,7 +26,7 @@ jobs:
       - name: Bundle with esbuild
         run: |
           mkdir -p dist/build
-          esbuild server.cjs --bundle --platform=node --target=node18 --outfile=dist/build/server.js
+          npx esbuild server.cjs --bundle --platform=node --target=node18 --outfile=dist/build/server.js
 
       - name: debug
         run: ls -la dist/build
