@@ -30,7 +30,7 @@ jobs:
 
       - name: Package Executable for ${{ matrix.arch }}
         run: |
-          pkg ./dist/build/server.js --target node18-${{ matrix.arch }}-linux -o dist/$(node -p "require('./package.json').name + '-v' + require('./package.json').version + '-linux-' + '${{ matrix.arch }}")
+          npx pkg ./dist/build/server.js --target node18-${{ matrix.arch }}-linux -o dist/$(node -p "require('./package.json').name + '-v' + require('./package.json').version + '-linux-' + '${{ matrix.arch }}")
       
       - name: Debug show files
         run: ls -la dist
