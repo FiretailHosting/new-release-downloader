@@ -11,7 +11,7 @@
     "targets": ["node18-x64-linux"]
   },
   "name": "release-downloader",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
