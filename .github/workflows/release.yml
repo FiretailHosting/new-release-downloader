@@ -8,54 +8,15 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        arch: [x64, arm64, x86]
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Set up Node.js
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 18
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Get version from package.json
-        id: package_version
-        run: echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_ENV
-
-      - name: Build project
-        run: npm run build
-
-      - name: Authenticate GitHub App
-        id: auth
-        uses: tibdex/github-app-token@v1
-        with:
-          app_id: ${{ secrets.GH_APP_ID }}
-          private_key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-
-      - name: Create GitHub Release
-        id: create_release
-        run: |
-          response=$(curl -s -X POST -H "Authorization: Bearer ${{ steps.auth.outputs.token }}" \
-          -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/repos/${{ github.repository }}/releases \
-          -d '{
-            "tag_name": "v${{ env.VERSION }}",
-            "name": "Release v${{ env.VERSION }}",
-            "body": "Automated release for version v${{ env.VERSION }}",
-            "draft": false,
-            "prerelease": false
-          }')
-          echo "UPLOAD_URL=$(echo $response | jq -r .upload_url)" >> $GITHUB_ENV
-
-      - name: Upload Release Asset (binary)
-        run: |
-           # Compute the binary filename dynamically.
-           binary_file=dist/$(node -p "require('./package.json').name + '-v' + require('./package.json').version + '-linux-x64'")
-           echo "Uploading: $binary_file"
-           curl -X POST -H "Authorization: Bearer ${{ steps.auth.outputs.token }}" \
-           -H "Content-Type: application/octet-stream" \
-           --data-binary @"$binary_file" \
-           "$(echo $UPLOAD_URL | sed 's/{?name,label}//')?name=$(basename $binary_file)"
+          node-version: '18'
+    
