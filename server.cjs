@@ -20,18 +20,18 @@ const { Transform } = require('stream');
   const outputFileName = process.env.OUTPUT_FILE_NAME || 'download';
   const githubPrivateKeyFilepath = process.env.GITHUB_PRIVATE_KEY_FILEPATH;
 
+  if (!appId || !installationId || !owner || !repo || !assetName || !githubPrivateKeyFilepath) {
+    console.error(
+      "Missing required configuration. Please check your environment variables (GITHUB_APP_ID, GITHUB_INSTALLATION_ID, GITHUB_OWNER, GITHUB_REPO, ASSET_NAME, GITHUB_PRIVATE_KEY_FILEPATH)."
+    );
+    process.exit(1);
+  }
+
   let privateKey;
   try {
     privateKey = fs.readFileSync(githubPrivateKeyFilepath, 'utf-8');
   } catch (err) {
     console.error(`Error reading private key file at "${githubPrivateKeyFilepath}":`, err);
-    process.exit(1);
-  }
-
-  if (!appId || !installationId || !owner || !repo || !assetName || !privateKey) {
-    console.error(
-      "Missing required configuration. Please check your environment variables (GITHUB_APP_ID, GITHUB_INSTALLATION_ID, GITHUB_OWNER, GITHUB_REPO, ASSET_NAME, GITHUB_PRIVATE_KEY_FILEPATH)."
-    );
     process.exit(1);
   }
 

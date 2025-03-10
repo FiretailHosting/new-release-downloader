@@ -6,6 +6,9 @@
     "dotenv": "^16.4.7",
     "node-fetch": "^3.3.2"
   },
+  "devDependencies": {
+    "esbuild": "^0.14.0"
+  },
   "pkg": {
     "targets": ["node18-x64-linux", "node18-arm64-linux"],
     "assets": ["build/server.js"]
@@ -15,14 +18,10 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.cjs",
-    "build": "mkdir -p dist/build && esbuild server.cjs --bundle --platform=node --target=node18 --outfile=dist/build/server.js && pkg ./dist/build/server.js --target node18-x64-linux -o dist/$(node -p \"require('./package.json').name + '-v' + require('./package.json').version + '-linux-x64'\")"
+    "start": "bun server.cjs",
+    "build": "mkdir -p dist/build && esbuild server.cjs --bundle --platform=node --target=node18 --outfile=dist/build/server.js && bun build --compile ./dist/build/server.js --outfile dist/$(node -p \"require('./package.json').name + '-v' + require('./package.json').version + '-linux-x64'\")"
   },
   "author": "",
   "license": "ISC",
-  "description": "",
-  "devDependencies": {
-    "esbuild": "^0.25.0",
-    "pkg": "^5.8.1"
-  }
+  "description": ""
 }
