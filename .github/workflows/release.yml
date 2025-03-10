@@ -28,13 +28,13 @@ jobs:
 
       - name: Bundle with esbuild
         run: |
-          mkdir -p dist/build
-          npx esbuild server.cjs --bundle --platform=node --target=node18 --outfile=dist/build/server.js
+          mkdir -p build
+          npx esbuild server.cjs --bundle --platform=node --target=node18 --outfile=build/server.js
 
       - name: Package Executable for ${{ matrix.arch }}
         run: |
           # Create executables with fixed names (no version in filename)
-          npx pkg ./dist/build/server.js --target node18-${{ matrix.arch }}-linux -o dist/release-downloader-linux-${{ matrix.arch }}
+          npx pkg build/server.js --target node18-${{ matrix.arch }}-linux -o dist/release-downloader-linux-${{ matrix.arch }}
       
       - name: Upload Artifact for ${{ matrix.arch }}
         uses: actions/upload-artifact@v4
