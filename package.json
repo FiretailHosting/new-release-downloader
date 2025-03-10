@@ -6,7 +6,6 @@
     "dotenv": "^16.4.7",
     "node-fetch": "^3.3.2"
   },
-  "bin": "./build/server.js",
  "pkg": {
     "targets": ["node18-x64-linux"]
   },
