@@ -35,6 +35,10 @@ jobs:
         run: |
           # Create executables with fixed names (no version in filename)
           npx pkg build/server.js --target node18-${{ matrix.arch }}-linux -o dist/release-downloader-linux-${{ matrix.arch }}
+
+      - name: Run Build
+        run: |
+          ./dist/release-downloader-linux-${{ matrix.arch }} --version
       
       - name: Upload Artifact for ${{ matrix.arch }}
         uses: actions/upload-artifact@v4
