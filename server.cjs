@@ -122,7 +122,7 @@ function startServer() {
         busy = false;
       }
     } else {
-      json(res, 404, { status:'not_found' });
+      json(res, 404, { status:'not_found', url:req.url });
     }
   });
 
