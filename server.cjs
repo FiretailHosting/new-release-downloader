@@ -19,6 +19,18 @@ const cli = Object.fromEntries(
 );
 const cfg = (k,e=k)=>cli[k] ?? process.env[e];
 
+/* ---------- Client IP Helper ---------- */
+function clientIP(req) {
+  if (req.headers['x-forwarded-for']) {
+    // may contain "client, proxy1, proxy2"
+    return req.headers['x-forwarded-for'].split(',')[0].trim();
+  }
+  if (req.headers['x-real-ip']) {
+    return req.headers['x-real-ip'];
+  }
+  return req.socket.remoteAddress;
+}
+
 /* ---------- configuration ---------- */
 const appId     = cfg('appId','GITHUB_APP_ID');
 const installationId  = cfg('installationId','GITHUB_INSTALLATION_ID');
@@ -88,8 +100,8 @@ function startServer() {
   let busy = false;                              // serialise downloads
 
   const server = http.createServer(async (req, res) => {
+    const remote = clientIP(req);
     if (req.method === 'POST' && req.url === webhookPath) {
-      const remote = req.socket.remoteAddress;
       log('REQ', `POST ${webhookPath} from ${remote}`);
 
       const body = await readBody(req);          // may be zero bytes
@@ -128,7 +140,7 @@ function startServer() {
       }
     } else {
       json(res, 404, { status:'not_found'});
-      log('REQ', `GET ${req.url} from ${req.socket.remoteAddress}`);
+      log('REQ', `GET ${req.url} from ${remote}`);
     }
   });
 
