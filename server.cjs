@@ -55,6 +55,11 @@ try {
     ok('Post-script exists & has she-bang');
   }
   if (webhookSecret) ok('Webhook secret set');
+  if (webhookPath) {
+    if (!webhookPath.startsWith('/')) die('❌ webhookPath must start with "/"');
+    if (webhookPath.endsWith('/')) die('❌ webhookPath must not end with "/"');
+    ok('Webhook path valid');
+  }
 } catch(e) { die(e.message); }
 
 /* ---------- GitHub auth & asset presence (unchanged) ---------- */
@@ -85,7 +90,7 @@ function startServer() {
   const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && req.url === webhookPath) {
       const remote = req.socket.remoteAddress;
-      log('REQ', `POST /${webhookPath} from ${remote}`);
+      log('REQ', `POST ${webhookPath} from ${remote}`);
 
       const body = await readBody(req);          // may be zero bytes
 
@@ -128,7 +133,7 @@ function startServer() {
 
   const port = process.env.PORT || 3000;
   server.listen(port, '0.0.0.0', () =>
-    console.log(`🚀 Listening (IPv4-only) POST http://0.0.0.0:${port}/${webhookPath}`)
+    console.log(`🚀 Listening (IPv4-only) POST http://0.0.0.0:${port}${webhookPath}`)
   );
 }
 
