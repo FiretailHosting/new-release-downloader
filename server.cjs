@@ -1,132 +1,200 @@
+#!/usr/bin/env node
 require('dotenv').config();
-const fs = require('fs');
-const path = require('path');
-const { Readable } = require('stream');
-const { pipeline } = require('stream/promises');
-const { Transform } = require('stream');
+const http   = require('http');
+const fs     = require('fs');
+const path   = require('path');
+const crypto = require('crypto');
+const { execFileSync } = require('child_process');
+const { Readable }     = require('stream');
+const { pipeline }     = require('stream/promises');
+const { Transform }    = require('stream');
 
+/* ---------- CLI / ENV helper ---------- */
+const cli = Object.fromEntries(
+  process.argv.slice(2).map(a => {
+    let [k, v] = a.startsWith('--') ? a.slice(2).split('=') : [];
+    if (!v) { const i = process.argv.indexOf(a); v = !process.argv[i+1]?.startsWith('--') ? process.argv[i+1] : true; }
+    return [k.replace(/-([a-z])/g, (_,c)=>c.toUpperCase()), v];
+  })
+);
+const cfg = (k,e=k)=>cli[k] ?? process.env[e];
+
+/* ---------- configuration ---------- */
+const appId     = cfg('appId','GITHUB_APP_ID');
+const installationId  = cfg('installationId','GITHUB_INSTALLATION_ID');
+const owner     = cfg('owner','GITHUB_OWNER');
+const repo      = cfg('repo','GITHUB_REPO');
+const downloadFolder = cfg('downloadFolder','DOWNLOAD_FOLDER') || './';
+const assetName = cfg('assetName','ASSET_NAME');
+const outputFileName = cfg('outputFileName','OUTPUT_FILE_NAME') || 'download';
+const githubPrivateKeyFilepath = cfg('githubPrivateKeyFilepath','GITHUB_PRIVATE_KEY_FILEPATH');
+const postDownloadScript       = cfg('postDownloadScript','POST_DOWNLOAD_SCRIPT');
+const webhookSecret            = cfg('webhookSecret','WEBHOOK_SECRET');      // NEW
+const webhookPath       = cfg('webhookPath','WEBHOOK_PATH'); // NEW
+
+/* ---------- simple log helpers ---------- */
+const ok  = m => console.log(`✔ ${m}`);
+const die = m => { console.error(m); process.exit(1); };
+const log = (tag, msg) => console.log(`[${new Date().toISOString()}] [${tag}] ${msg}`);
+
+/* ---------- pre-flight checks (unchanged except for log) ---------- */
+try {
+  if (!appId||!installationId||!owner||!repo||!assetName||!githubPrivateKeyFilepath || !webhookPath)
+    die('❌ Missing required config');
+  ok('Required config present');
+  if (!/^\d+$/.test(String(installationId))) die('❌ installationId must be numeric');
+  ok('Installation ID numeric');
+  fs.accessSync(githubPrivateKeyFilepath, fs.constants.R_OK);
+  ok('Private-key file readable');
+  if (postDownloadScript) {
+    const abs = path.resolve(postDownloadScript);
+    if (!fs.existsSync(abs)||!fs.statSync(abs).isFile()) die('❌ post-script invalid path');
+    const fd = fs.openSync(abs,'r'), buf = Buffer.alloc(2);
+    fs.readSync(fd,buf,0,2,0); fs.closeSync(fd);
+    if (buf.toString()!=='#!') die('❌ post-script lacks she-bang');
+    ok('Post-script exists & has she-bang');
+  }
+  if (webhookSecret) ok('Webhook secret set');
+} catch(e) { die(e.message); }
+
+/* ---------- GitHub auth & asset presence (unchanged) ---------- */
+let baseAuth;                // cached Octokit deps
 (async () => {
-  // Dynamically import the ESM-only Octokit packages
   const { Octokit } = await import('@octokit/rest');
   const { createAppAuth } = await import('@octokit/auth-app');
+  const privateKey = fs.readFileSync(githubPrivateKeyFilepath,'utf8');
 
-  // Load configuration from environment variables
-  const appId = process.env.GITHUB_APP_ID;
-  const installationId = process.env.GITHUB_INSTALLATION_ID;
-  const owner = process.env.GITHUB_OWNER;
-  const repo = process.env.GITHUB_REPO;
-  const downloadFolder = process.env.DOWNLOAD_FOLDER || './';
-  const assetName = process.env.ASSET_NAME; // e.g., "x64-linux"
-  const outputFileName = process.env.OUTPUT_FILE_NAME || 'download';
-  const githubPrivateKeyFilepath = process.env.GITHUB_PRIVATE_KEY_FILEPATH;
+  const octokit = new Octokit({ authStrategy:createAppAuth, auth:{ appId, privateKey, installationId } });
+  try { await octokit.auth({ type:'installation' }); ok('Authenticated with GitHub'); }
+  catch { die('❌ GitHub authentication failed'); }
 
-  if (!appId || !installationId || !owner || !repo || !assetName || !githubPrivateKeyFilepath) {
-    console.error(
-      "Missing required configuration. Please check your environment variables (GITHUB_APP_ID, GITHUB_INSTALLATION_ID, GITHUB_OWNER, GITHUB_REPO, ASSET_NAME, GITHUB_PRIVATE_KEY_FILEPATH)."
-    );
-    process.exit(1);
-  }
+  const rel = (await octokit.repos.getLatestRelease({ owner, repo })).data;
+  if (!rel.assets?.length) die('❌ latest release has no assets');
+  if (!rel.assets.find(a=>a.name===assetName)) die(`❌ asset "${assetName}" not found`);
+  ok(`Asset "${assetName}" present in latest release`);
 
-  let privateKey;
-  try {
-    privateKey = fs.readFileSync(githubPrivateKeyFilepath, 'utf-8');
-  } catch (err) {
-    console.error(`Error reading private key file at "${githubPrivateKeyFilepath}":`, err);
-    process.exit(1);
-  }
+  baseAuth = { Octokit, createAppAuth, privateKey };
+  console.log('🌐 Pre-flight done — starting server…');
+  startServer();
+})();
 
-  // Initialize Octokit with GitHub App authentication
-  const octokit = new Octokit({
-    authStrategy: createAppAuth,
-    auth: {
-      appId,
-      privateKey,
-      installationId,
-    },
-  });
+/* ---------- WEBHOOK SERVER ---------- */
+function startServer() {
+  let busy = false;                              // serialise downloads
 
-  // Get an installation access token
-  const { token: installationToken } = await octokit.auth({ type: "installation" });
-  if (!installationToken) {
-    console.error("No installation token received from GitHub.");
-    process.exit(1);
-  }
+  const server = http.createServer(async (req, res) => {
+    if (req.method === 'POST' && req.url === webhookPath) {
+      const remote = req.socket.remoteAddress;
+      log('REQ', `POST /${webhookPath} from ${remote}`);
 
-  // Fetch the latest release for the repository
-  const releaseResponse = await octokit.repos.getLatestRelease({ owner, repo });
-  const release = releaseResponse.data;
+      const body = await readBody(req);          // may be zero bytes
 
-  // Look for an asset that exactly matches the desired asset name
-  if (!(release.assets && release.assets.length > 0)) {
-    console.error("No assets attached to the latest release.");
-    process.exit(1);
-  }
-  const matchingAsset = release.assets.find(asset => asset.name === assetName);
-  if (!matchingAsset) {
-    console.error(`Asset named "${assetName}" not found in the release assets.`);
-    process.exit(1);
-  }
-  console.log(`Found asset "${assetName}" with id ${matchingAsset.id}.`);
-
-  // Construct the API URL for downloading the asset
-  const assetApiUrl = `https://api.github.com/repos/${owner}/${repo}/releases/assets/${matchingAsset.id}`;
-  console.log("Asset API URL:", assetApiUrl);
-
-  // Prepare the request headers, including User-Agent and redirect option
-  const requestHeaders = {
-    Authorization: `token ${installationToken}`,
-    Accept: 'application/octet-stream',
-    'User-Agent': 'node-download-script'
-  };
-
-  // Download the asset using fetch (Node 18+ has a global fetch API)
-  const response = await fetch(assetApiUrl, { 
-    headers: requestHeaders, 
-    redirect: 'follow' // be explicit about following redirects
-  });
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`Failed to download release asset. Status: ${response.status}. Message: ${errorText}`);
-    process.exit(1);
-  }
-
-  // Optional: log the Content-Length header for progress estimation
-  const contentLengthHeader = response.headers.get('content-length');
-  const totalSize = contentLengthHeader ? parseInt(contentLengthHeader, 10) : null;
-  if (totalSize) {
-    console.log(`Total size: ${totalSize} bytes`);
-  } else {
-    console.log("Content-Length header is missing. Cannot determine total size.");
-  }
-
-  // Convert the WHATWG stream (response.body) to a Node.js Readable stream
-  const nodeReadable = Readable.fromWeb(response.body);
-
-  // Create a transform stream to log progress
-  let downloadedBytes = 0;
-  const progressLogger = new Transform({
-    transform(chunk, encoding, callback) {
-      downloadedBytes += chunk.length;
-      if (totalSize) {
-        const percent = ((downloadedBytes / totalSize) * 100).toFixed(2);
-        console.log(`Downloaded ${downloadedBytes} of ${totalSize} bytes (${percent}%)`);
-      } else {
-        console.log(`Downloaded ${downloadedBytes} bytes`);
+      /* ---------- secret validation ---------- */
+      if (webhookSecret) {
+        const sig = req.headers['x-hub-signature-256'];
+        if (!sig) {
+          log('AUTH', `Missing signature header from ${remote}`);
+          return unauthorized(res, 'signature_required');
+        }
+        if (!verifySig(body, sig)) {
+          log('AUTH', `Bad signature from ${remote}`);
+          return unauthorized(res, 'signature_mismatch');
+        }
+        log('AUTH', `Signature OK from ${remote}`);
       }
-      callback(null, chunk);
+
+      /* ---------- busy guard ---------- */
+      if (busy) {
+        log('BUSY', `Refusing new job (already busy)`);
+        return json(res, 429, { status:'busy' });
+      }
+
+      /* ---------- run download ---------- */
+      busy = true;
+      try {
+        const info = await runDownload();   // {bytes}
+        log('DONE', `Download successful (${info.bytes} bytes)`);
+        json(res, 200, { status:'success', asset:assetName, bytes:info.bytes, script:!!postDownloadScript });
+      } catch (err) {
+        log('ERR', `Download failed: ${err.message}`);
+        json(res, 500, { status:'error', message:err.message });
+      } finally {
+        busy = false;
+      }
+    } else {
+      json(res, 404, { status:'not_found' });
     }
   });
 
-  // Save the downloaded asset to disk with progress logging
-  const filePath = path.join(downloadFolder, outputFileName);
-  console.log("Saving downloaded asset to:", filePath);
-  const fileStream = fs.createWriteStream(filePath);
+  const port = process.env.PORT || 3000;
+  server.listen(port, '0.0.0.0', () =>
+    console.log(`🚀 Listening (IPv4-only) POST http://0.0.0.0:${port}/${webhookPath}`)
+  );
+}
 
-  try {
-    await pipeline(nodeReadable, progressLogger, fileStream);
-    console.log("File downloaded successfully.");
-  } catch (err) {
-    console.error("Error during file download:", err);
-    process.exit(1);
+/* ---------- helper fns ---------- */
+const json = (res, code, obj) =>
+  res.writeHead(code, { 'content-type':'application/json' })
+     .end(JSON.stringify(obj) + '\n');
+
+const unauthorized = (res, reason) =>
+  json(res, 401, { status:'unauthorized', reason });
+
+const readBody = req => new Promise(resolve => {
+  const chunks = [];
+  req.on('data', c => chunks.push(c))
+     .on('end', () => resolve(Buffer.concat(chunks)));
+});
+
+function verifySig(buf, header) {
+  const expected = 'sha256=' +
+    crypto.createHmac('sha256', webhookSecret).update(buf).digest('hex');
+  // constant-time compare to avoid timing leaks
+  try { return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(header)); }
+  catch { return false; }
+}
+
+/* ---------- download logic (unchanged) ---------- */
+async function runDownload() {
+  const { Octokit, createAppAuth, privateKey } = baseAuth;
+  const octokit = new Octokit({ authStrategy:createAppAuth, auth:{ appId, privateKey, installationId } });
+  const { token } = await octokit.auth({ type:'installation' });
+
+  const rel = (await octokit.repos.getLatestRelease({ owner, repo })).data;
+  const asset = rel.assets.find(a => a.name === assetName);
+  if (!asset) throw new Error('asset missing');
+
+  const url = `https://api.github.com/repos/${owner}/${repo}/releases/assets/${asset.id}`;
+  const response = await fetch(url, {
+    headers:{
+      Authorization:`token ${token}`,
+      Accept:'application/octet-stream',
+      'User-Agent':'release-downloader'
+    },
+    redirect:'follow'
+  });
+  if (!response.ok) throw new Error(`download HTTP ${response.status}`);
+
+  const total = parseInt(response.headers.get('content-length') || '0', 10) || null;
+  let bytes = 0;
+  const progress = new Transform({
+    transform(c, _e, cb) {
+      bytes += c.length;
+      if (total) {
+        const pct = ((bytes / total) * 100).toFixed(1);
+        process.stdout.write(`\r${bytes}/${total} (${pct}%)   `);
+      }
+      cb(null, c);
+    }
+  });
+  const filePath = path.join(downloadFolder, outputFileName);
+  await pipeline(Readable.fromWeb(response.body), progress, fs.createWriteStream(filePath));
+  console.log('\n✅ file saved');
+
+  if (postDownloadScript) {
+    console.log(`▶ ${postDownloadScript}`);
+    execFileSync(postDownloadScript, [filePath], { stdio:'inherit' });
+    console.log('✅ post-script finished');
   }
-})();
+  return { bytes };
+}
