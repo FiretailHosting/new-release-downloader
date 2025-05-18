@@ -127,7 +127,8 @@ function startServer() {
         busy = false;
       }
     } else {
-      json(res, 404, { status:'not_found', url:req.url });
+      json(res, 404, { status:'not_found'});
+      log('REQ', `GET ${req.url} from ${req.socket.remoteAddress}`);
     }
   });
 
