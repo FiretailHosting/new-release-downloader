@@ -119,29 +119,7 @@ function startServer() {
         }
         log('AUTH', `Signature OK from ${remote}`);
       }
-
-      /* ---------- filter: action + asset ---------- */
-      let payload;
-      try {
-        payload = JSON.parse(body.toString('utf8') || '{}');
-      } catch (e) {
-        log('ERR', `Invalid JSON from ${remote}`);
-        return json(res, 400, { status: 'invalid_json' });
-      }
- 
-      if (payload.action !== 'edited') {
-        log('SKIP', `Ignoring action "${payload.action}"`);
-        return json(res, 200, { status: 'ignored', reason: 'action' });
-      }
- 
-      const hasWantedAsset =
-        payload.release?.assets?.some(a => a.name === assetName);
- 
-      if (!hasWantedAsset) {
-        log('SKIP', `No asset named "${assetName}"`);
-        return json(res, 200, { status: 'ignored', reason: 'asset' });
-      }
-
+      
       /* ---------- busy guard ---------- */
       if (busy) {
         log('BUSY', `Refusing new job (already busy)`);
