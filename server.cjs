@@ -40,13 +40,14 @@ const downloadFolder = cfg('downloadFolder','DOWNLOAD_FOLDER') || './';
 const assetName = cfg('assetName','ASSET_NAME');
 const outputFileName = cfg('outputFileName','OUTPUT_FILE_NAME') || 'download';
 const githubPrivateKeyFilepath = cfg('githubPrivateKeyFilepath','GITHUB_PRIVATE_KEY_FILEPATH');
-const postDownloadScript       = cfg('postDownloadScript','POST_DOWNLOAD_SCRIPT');
+const postDownloadCommand      = cfg('postDownloadCommand','POST_DOWNLOAD_COMMAND');
 const webhookSecret            = cfg('webhookSecret','WEBHOOK_SECRET');      // NEW
 const webhookPath       = cfg('webhookPath','WEBHOOK_PATH'); // NEW
 
 /* ---------- simple log helpers ---------- */
 const ok  = m => console.log(`✔ ${m}`);
 const die = m => { console.error(m); process.exit(1); };
+const warn = m => console.warn(`⚠ ${m}`);
 const log = (tag, msg) => console.log(`[${new Date().toISOString()}] [${tag}] ${msg}`);
 
 /* ---------- pre-flight checks (unchanged except for log) ---------- */
@@ -58,15 +59,13 @@ try {
   ok('Installation ID numeric');
   fs.accessSync(githubPrivateKeyFilepath, fs.constants.R_OK);
   ok('Private-key file readable');
-  if (postDownloadScript) {
-    const abs = path.resolve(postDownloadScript);
-    if (!fs.existsSync(abs)||!fs.statSync(abs).isFile()) die('❌ post-script invalid path');
-    const fd = fs.openSync(abs,'r'), buf = Buffer.alloc(2);
-    fs.readSync(fd,buf,0,2,0); fs.closeSync(fd);
-    if (buf.toString()!=='#!') die('❌ post-script lacks she-bang');
-    ok('Post-script exists & has she-bang');
+  if (postDownloadCommand) {
+    if (typeof postDownloadCommand !== 'string') die('❌ postDownloadCommand must be a string');
+    if (!postDownloadCommand.trim()) die('❌ postDownloadCommand must not be empty');
+    ok('Post-download command valid');
   }
   if (webhookSecret) ok('Webhook secret set');
+  else warn('webhookSecret not set, webhook auth disabled');
   if (webhookPath) {
     if (!webhookPath.startsWith('/')) die('❌ webhookPath must start with "/"');
     if (webhookPath.endsWith('/')) die('❌ webhookPath must not end with "/"');
@@ -131,7 +130,7 @@ function startServer() {
       try {
         const info = await runDownload();   // {bytes}
         log('DONE', `Download successful (${info.bytes} bytes)`);
-        json(res, 200, { status:'success', asset:assetName, bytes:info.bytes, script:!!postDownloadScript });
+        json(res, 200, { status:'success', asset:assetName, bytes:info.bytes });
       } catch (err) {
         log('ERR', `Download failed: ${err.message}`);
         json(res, 500, { status:'error', message:err.message });
@@ -209,10 +208,11 @@ async function runDownload() {
   await pipeline(Readable.fromWeb(response.body), progress, fs.createWriteStream(filePath));
   console.log('\n✅ file saved');
 
-  if (postDownloadScript) {
-    console.log(`▶ ${postDownloadScript}`);
-    execFileSync(postDownloadScript, [filePath], { stdio:'inherit' });
-    console.log('✅ post-script finished');
+  if (postDownloadCommand) {
+    const cmd = postDownloadCommand;  
+    console.log(`▶ ${cmd}`);
+    execFileSync('/bin/bash', ['-c', cmd], { stdio:'inherit' });
+    console.log('✅ post-command finished');
   }
   return { bytes };
 }
